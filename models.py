@@ -41,7 +41,7 @@ class Transformer(nnx.Module):
         self.mha = nnx.MultiHeadAttention(
             num_heads=num_heads, in_features=embed_dim, decode=False, rngs=rngs
         )
-        # The first dropout with `flax.nnx.Dropout`.
+        # # The first dropout with `flax.nnx.Dropout`.
         self.dropout1 = nnx.Dropout(rngs=rngs, rate=rate)
         # First layer normalization with `flax.nnx.LayerNorm`.
         self.layer_norm1 = nnx.LayerNorm(
@@ -55,8 +55,8 @@ class Transformer(nnx.Module):
         self.linear2 = nnx.Linear(
             in_features=embed_dim, out_features=embed_dim, rngs=rngs
         )
-        # The second dropout with `flax.nnx.Dropout`.
-        self.dropout2 = nnx.Dropout(rngs=rngs, rate=rate)
+        # # The second dropout with `flax.nnx.Dropout`.
+        # self.dropout2 = nnx.Dropout(rngs=rngs, rate=rate)
         # Second layer normalization with `flax.nnx.LayerNorm`.
         self.layer_norm2 = nnx.LayerNorm(
             epsilon=1e-6, num_features=embed_dim, rngs=rngs
@@ -69,7 +69,7 @@ class Transformer(nnx.Module):
         # Apply Multi-Head Attention with the causal attention mask.
         attention_output = self.mha(inputs_q=inputs, decode=False)
         # Apply the first dropout.
-        attention_output = self.dropout1(attention_output, deterministic=deterministic)
+        attention_output = attention_output
         # Apply the first layer normalization.
         out1 = self.layer_norm1(inputs + attention_output)
 
@@ -77,12 +77,13 @@ class Transformer(nnx.Module):
         # Apply the first linear transformation.
         ffn_output = self.linear1(out1)
         # Apply the ReLU activation with `flax.nnx.relu`.
-        # ffn_output = nnx.relu(ffn_output)
-        ffn_output = nnx.tanh(ffn_output)
+        ffn_output = nnx.relu(ffn_output)
+        # ffn_output = nnx.tanh(ffn_output)
+        # ffn_output = nnx.sigmoid(ffn_output)
         # Apply the second linear transformation.
         ffn_output = self.linear2(ffn_output)
         # Apply the second dropout.
-        ffn_output = self.dropout2(ffn_output, deterministic=deterministic)
+        ffn_output = ffn_output
         # Apply the second layer normalization and return the output of the Transformer block.
         return self.layer_norm2(out1 + ffn_output)
 
@@ -103,7 +104,7 @@ class Model(nnx.Module):
 
         self.transformers = [
             Transformer(
-                embed_dim=embed_dim, num_heads=num_heads, rngs=rngs, rate=0.1
+                embed_dim=embed_dim, num_heads=num_heads, rngs=rngs, rate=0.01
             )
             for _ in range(num_of_transformers)
         ]
@@ -116,23 +117,26 @@ class Model(nnx.Module):
         )
 
     def __call__(self, x: jax.Array, deterministic: bool = False):
-        positions = jnp.array([jnp.arange(0, 64) for i in range(x.shape[0])])
+        positions = jnp.arange(0, 64)
         # print(positions,x.shape)
         position_embedding = self.pos_emb(positions)
         token_embedding = self.embed(x)
+        
+        
 
         x = token_embedding + position_embedding
 
         for transformer in self.transformers:
             x = transformer(x, deterministic=deterministic)
-        arr = [nnx.tanh(self.output_layer(x[i].flatten())) for i in range(x.shape[0])]
-        # x = x.flatten()
-        # x = self.output_layer(x)
-        return jnp.array(arr)
+        # print(self.output_layer(x.flatten()))
+        arr = self.output_layer(x.flatten())
+        
+        arr = nnx.tanh(arr)*10
+        return arr
 
 
 def create_model():
-    return Model(rngs=nnx.Rngs(0), board_dim=64, embed_dim=200, num_of_transformers=5) # the embed dim has to be a multiple of 25
+    return Model(rngs=nnx.Rngs(0), board_dim=64, embed_dim=500, num_of_transformers=1,num_heads=500//25) # the embed dim has to be a multiple of 25
 
 
 if __name__ == "__main__":
